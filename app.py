@@ -1,79 +1,54 @@
 import streamlit as st
 import pandas as pd
 import joblib
-from sklearn.metrics import roc_auc_score, average_precision_score
 
 st.set_page_config(page_title="Stroke Prediction", layout="wide")
-st.title("Stroke Prediction Dashboard")
+st.title("Stroke Prediction")
 
 st.sidebar.header("Inputs")
 model_path = st.sidebar.text_input("Model path (.pkl)", value="lda_tuned_model.pkl")
-
-risk_low = st.sidebar.slider("Low Risk Upper Bound", 0.01, 0.49, 0.10, 0.01)
-risk_med = st.sidebar.slider("Medium Risk Upper Bound", 0.11, 0.90, 0.30, 0.01)
-if risk_low >= risk_med:
-    st.sidebar.error("Low risk bound must be lower than medium risk bound.")
 
 @st.cache_resource
 def load_model(path: str):
     return joblib.load(path)
 
-def create_risk_bands(probs, low, med):
-    return pd.cut(
-        probs,
-        bins=[0, low, med, 1.0],
-        labels=["Low Risk", "Medium Risk", "High Risk"]
-    )
-
-# -----------------------------
-# Manual input form
-# -----------------------------
 st.subheader("Enter Patient Details")
-
 with st.form("patient_form"):
-    gender = st.selectbox("Gender", ["Male", "Female", "Other"])
     age = st.number_input("Age", min_value=0, max_value=120, value=40)
-    hypertension = st.selectbox("Hypertension", [0, 1])
-    heart_disease = st.selectbox("Heart Disease", [0, 1])
+    hypertension_bool = st.selectbox("Hypertension", [False, True])
+    heart_disease_bool = st.selectbox("Heart Disease", [False, True])
     avg_glucose_level = st.number_input("Average Glucose Level", min_value=0.0, value=100.0, step=1.0)
     bmi = st.number_input("BMI", min_value=0.0, value=25.0, step=0.1)
-    smoking_status = st.selectbox(
-        "Smoking Status",
-        ["never smoked", "formerly smoked", "smokes", "Unknown"]
-    )
-    submitted = st.form_submit_button("Predict Risk")
+    gender = st.selectbox("Gender", ["Male", "Female", "Other"])
+    smoking_status = st.selectbox("Smoking Status", ["never smoked", "formerly smoked", "smokes", "Unknown"])
+    submitted = st.form_submit_button("Predict")
 
 if not submitted:
     st.stop()
 
-try:
-    model = load_model(model_path)
-except Exception as e:
-    st.error(f"Failed to load model: {e}")
-    st.stop()
+model = load_model(model_path)
 
-# Build input row (must match training columns)
 X = pd.DataFrame([{
-    "gender": gender,
     "age": age,
-    "hypertension": hypertension,
-    "heart_disease": heart_disease,
+    "hypertension": 1 if hypertension_bool else 0,
+    "heart_disease": 1 if heart_disease_bool else 0,
     "avg_glucose_level": avg_glucose_level,
     "bmi": bmi,
+    "gender": gender,
     "smoking_status": smoking_status
 }])
 
-try:
-    y_prob = model.predict_proba(X)[:, 1]
-except Exception as e:
-    st.error(
-        "Prediction failed. Ensure the model expects the same columns. "
-        "If you trained with preprocessing, save and load a Pipeline."
-    )
-    st.exception(e)
-    st.stop()
+y_prob = model.predict_proba(X)[:, 1]
+p = float(y_prob[0])
+confidence = max(p, 1 - p)
 
-risk_band = create_risk_bands(pd.Series(y_prob), risk_low, risk_med).iloc[0]
+if p < 0.20:
+    label = "Less likely"
+elif p < 0.50:
+    label = "Likely"
+else:
+    label = "Highly likely"
 
-st.metric("Stroke Probability", f"{y_prob[0]:.3f}")
-st.metric("Risk Band", str(risk_band))
+st.metric("Stroke Probability", f"{p*100:.2f}%")
+st.metric("Confidence", f"{confidence*100:.2f}%")
+st.success(f"Risk Level: {label}")
