@@ -5,7 +5,7 @@ import os
 
 st.set_page_config(page_title="Stroke Prediction", layout="wide")
 
-# ---- Health/clinical theme ----
+# Design
 st.markdown(
     """
     <style>
